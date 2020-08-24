@@ -1,0 +1,60 @@
+# 10:12 AM 8/24/2020 
+# R 4.02 
+# data.table 1.13.1
+
+library(data.table)
+library(lubridate)
+fsum <- function(x) {sum(x,na.rm=TRUE)}
+
+# (download and rename these files and paths as need)
+# source: https://www.sos.wa.gov/elections/research/2020-primary-election.aspx
+# read in data files
+Primary.2020.MB.all.other <- fread("D:\\Politics\\Primary.2020\\ballotstatusreport08182020.all.other\\BallotStatusReport08182020.all.other.csv")
+Primary.2020.MB.ki <- fread("D:\\Politics\\Primary.2020\\ballotstatusreport08182020.ki\\BallotStatusReport08182020.ki.csv")
+Primary.2020.MB.cr.pi.sn.sp <- fread("D:\\Politics\\Primary.2020\\ballotstatusreport08182020.cr.pi.sn.sp\\BallotStatusReport08182020.cr.pi.sn.sp.csv")
+#rbind them together,remove spaces from col.names, and Age
+Primary.2020.MB.all <- rbind(Primary.2020.MB.ki,Primary.2020.MB.cr.pi.sn.sp,Primary.2020.MB.all.other)
+colnames(Primary.2020.MB.all) <- gsub(" ","",names(Primary.2020.MB.all))
+Primary.2020.MB.all[,Age:=round(as.integer(ymd(as.Date(now())) - as.Date(mdy(gsub(" 0:00","",DOB))))/365)]
+
+# Challenges  
+Primary.2020.MB.all[order(BallotStatus)][!duplicated(VoterID),.N,.(ChallengeReason)][order(-N)]
+
+# Percentages Rejected
+Reject <- Primary.2020.MB.all[order(BallotStatus)][!duplicated(VoterID),.N,.(ChallengeReason)][order(-N)][2:21][,fsum(N)]
+Accept <- Primary.2020.MB.all[order(BallotStatus)][!duplicated(VoterID),.N,.(ChallengeReason)][order(-N)][1][,fsum(N)]
+(Reject/(Reject + Accept)) * 100 
+
+# Return Method
+Primary.2020.MB.all[BallotStatus != "",.N,.(ReturnMethod)][order(-N)]
+
+# Return method counts for top three challenge categories for "Drop Box" and "Mail".
+Primary.2020.MB.all[BallotStatus == "Rejected" ^ ChallengeReason %in% c("Signature Does Not Match", "Too Late","Unsigned"),.N,.(ReturnMethod,ChallengeReason)][,
+dcast(.SD,ReturnMethod ~ ChallengeReason, value.var="N", fun.aggregate=fsum)]  
+
+# Received Date for Top Three Challenges
+Primary.2020.MB.all[BallotStatus == "Rejected" & ChallengeReason %in% c("Signature Does Not Match", "Too Late","Unsigned"),.N,.(ReceivedDate=mdy(substr(ReceivedDate,0,9)),ChallengeReason)][,dcast(.SD,ReceivedDate ~ ChallengeReason, value.var="N", fun.aggregate=fsum)][order(ReceivedDate)]
+
+# Top Three Challenges by County
+Primary.2020.MB.all[BallotStatus == "Rejected" & ChallengeReason %in% c("Signature Does Not Match", "Too Late","Unsigned") ,
+.N,.(County,ChallengeReason)][order(-N)][,dcast(.SD,County ~ ChallengeReason, value.var="N", fun.aggregate=fsum)]
+
+
+# By County by ReturnMethod for top three challenges
+setnames(Primary.2020.MB.all[ReturnMethod %in% c("Drop Box","Mail"),.N,.(County,ReturnMethod)][order(-N)][,
+dcast(.SD,County ~ ReturnMethod, value.var="N", fun.aggregate=fsum)],c("County","DropBox","Mail"))[][,
+.SD[,.(MailPCT=round(Mail/(DropBox + Mail),3) * 100)],.(County,DropBox,Mail)]
+
+# Some other tables
+Primary.2020.MB.all[BallotStatus == "Rejected" & ReturnMethod %in% c("Drop Box","Mail"),
+.N,.(County,ReturnMethod)][order(-N)][,dcast(.SD,County ~ ReturnMethod, value.var="N", fun.aggregate=fsum)]
+
+Primary.2020.MB.all[BallotStatus == "Rejected"& ChallengeReason %in% c("Signature Does Not Match", "Too Late","Unsigned"),.N,
+.(ReceivedDate=mdy(substr(ReceivedDate,0,9)),ChallengeReason)][order(-N)][,
+dcast(.SD,ReceivedDate ~ ChallengeReason, value.var="N", fun.aggregate=fsum)][order(ReceivedDate)]
+
+Primary.2020.MB.all[BallotStatus == "Rejected" & ChallengeReason %in% c("Signature Does Not Match", "Too Late","Unsigned") ,.N,.(County,ChallengeReason)][order(-N)][,dcast(.SD,County ~ ChallengeReason, value.var="N", fun.aggregate=fsum)]
+
+
+
+
